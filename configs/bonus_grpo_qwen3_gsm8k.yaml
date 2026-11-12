@@ -1,0 +1,51 @@
+# Bonus A: reinforcement learning with verifiable rewards (GRPO) on grade-school math
+# Approach : sample 8 answers per question, reward correct + well-formatted ones, push the policy
+#            toward answers that beat their group's average. No reward model, no critic.
+# Chapter  : course/12_rl_grpo_reasoning.md            Runtime: ~40-60 min on a Colab T4 (estimate)
+run_name: bonus-qwen3-0.6b-gsm8k-grpo
+method: grpo
+
+model:
+  id: Qwen/Qwen3-0.6B
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.0
+  target_modules: all-linear
+
+data:
+  dataset: openai/gsm8k
+  subset: main
+  formatter: modeltune.formatters:gsm8k   # -> prompt + "answer" column the reward reads
+  train_split: train
+
+rewards:                                  # summed per completion
+  - modeltune.rewards:correctness         # 2.0 if the final number is right
+  - modeltune.rewards:format_reward       # 0.5 for <reasoning>...</reasoning><answer>...</answer>
+
+train:
+  max_steps: 100
+  learning_rate: 2.0e-5
+  lr_scheduler_type: constant_with_warmup
+  warmup_steps: 5
+  num_generations: 8                      # group size G: answers sampled per question
+  per_device_train_batch_size: 8          # counted in completions: 8 = one question's group
+  gradient_accumulation_steps: 2          # 2 questions (16 completions) per optimizer step
+  max_completion_length: 256
+  temperature: 1.0                        # diversity inside a group is what creates a learning signal
+  chat_template_kwargs: {enable_thinking: false}
+  logging_steps: 5
+  # Watch: reward (up), reward_std (must stay > 0), completions/mean_length, clip ratio.
+
+eval:
+  metric: gsm8k
+  split: test
+  max_samples: 200
+  max_new_tokens: 320
+  batch_size: 32
+  chat_template_kwargs: {enable_thinking: false}
+
+hub:
+  push: true
+  repo_id: 57Ajay/qwen3-0.6b-gsm8k-grpo-lora

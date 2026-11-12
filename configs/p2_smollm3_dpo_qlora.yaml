@@ -1,0 +1,52 @@
+# Project 2, stage 2: align the SFT model with human preferences (DPO with QLoRA)
+# Approach : continue training the SFT adapter on (prompt, chosen, rejected) pairs. TRL keeps a
+#            frozen copy of the SFT adapter as the reference policy, so no 2nd model is loaded.
+# Chapter  : course/10_preference_optimization.md + 11  Runtime: ~50-80 min on a Colab T4 (estimate)
+# Requires : stage 1 finished (adapter on the Hub, or point model.adapter at outputs/p2-smollm3-3b-sft-qlora)
+run_name: p2-smollm3-3b-dpo-qlora
+method: dpo
+
+model:
+  id: HuggingFaceTB/SmolLM3-3B-Base
+  quantization: 4bit
+  adapter: 57Ajay/smollm3-3b-sft-qlora   # start point AND reference model
+  chat_template: templates/chatml.jinja
+  eos_token: "<|im_end|>"
+
+data:
+  dataset: trl-lib/ultrafeedback_binarized   # chosen/rejected chats, rated by GPT-4
+  train_split: train
+  eval_split: test
+  max_train_samples: 2000
+  max_eval_samples: 100
+
+train:
+  num_train_epochs: 1
+  learning_rate: 1.0e-5               # ~20x lower than SFT: we nudge, we don't rewrite
+  beta: 0.1                           # how far from the reference we may drift (lower = further)
+  lr_scheduler_type: cosine
+  warmup_steps: 0.1
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
+  per_device_eval_batch_size: 1
+  gradient_checkpointing: true
+  max_length: 1024
+  optim: paged_adamw_8bit
+  eval_strategy: steps
+  eval_steps: 25
+  logging_steps: 5
+  # Watch rewards/accuracies (should rise above 0.5) and rewards/margins (should grow).
+
+eval:
+  metric: reward_model
+  reward_model: Skywork/Skywork-Reward-V2-Qwen3-0.6B
+  dataset: trl-lib/ultrafeedback_binarized
+  split: test
+  formatter: modeltune.formatters:preference_to_prompt
+  max_samples: 100
+  max_new_tokens: 384
+  batch_size: 16
+
+hub:
+  push: true
+  repo_id: 57Ajay/smollm3-3b-sft-dpo-qlora

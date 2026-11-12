@@ -1,0 +1,18 @@
+{#- ChatML: the most common chat format (Qwen, SmolLM, many others).
+    <|im_start|>role\ncontent<|im_end|>\n   ... and the assistant's turn is wrapped in
+    {% generation %} tags so TRL can compute the loss ONLY on what the assistant says
+    (SFTConfig.assistant_only_loss=True). See course/06_data_and_chat_templates.md. -#}
+{%- for message in messages %}
+    {%- if message['role'] == 'assistant' %}
+        {{- '<|im_start|>assistant\n' }}
+        {%- generation %}
+            {{- message['content'] + '<|im_end|>' }}
+        {%- endgeneration %}
+        {{- '\n' }}
+    {%- else %}
+        {{- '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n' }}
+    {%- endif %}
+{%- endfor %}
+{%- if add_generation_prompt %}
+    {{- '<|im_start|>assistant\n' }}
+{%- endif %}

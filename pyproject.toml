@@ -1,0 +1,29 @@
+[project]
+name = "modeltune"
+version = "1.0.0"
+description = "Learn LLM fine-tuning from 0 to 100: a course plus a small SFT / DPO / GRPO toolkit"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+# The fine-tuning stack changes fast (transformers v5 renamed and removed arguments the course relies on),
+# so the core libraries are pinned to the versions the course was tested with. uv.lock pins everything else.
+dependencies = [
+    "torch>=2.6",
+    "transformers==5.22.2",
+    "trl==1.17.1",
+    "peft==0.21.2",
+    "datasets==5.2.0",
+    "accelerate==1.15.0",
+    "bitsandbytes==0.50.2",
+    "huggingface-hub>=2.4.0",
+    "pyyaml>=6.0",
+]
+
+[dependency-groups]
+# Only for running the notebooks locally (Colab already has these): uv sync --group notebooks
+notebooks = ["jupyterlab", "matplotlib", "pandas"]
+
+[tool.uv]
+# This repo is a course + scripts, not a library to publish: `uv sync` installs the dependencies and
+# `uv run python -m modeltune.train ...` runs the code straight from the checkout.
+package = false

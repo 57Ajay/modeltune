@@ -1,0 +1,57 @@
+# Project 2, stage 1: SmolLM3-3B-Base -> a chat assistant (SFT with QLoRA)
+# Approach : 4-bit NF4 base + LoRA; multi-turn chat data, loss on assistant turns only
+# Chapter  : course/11_project2_base_to_aligned.md     Runtime: ~45-70 min on a Colab T4 (estimate)
+#
+# A BASE model has never seen a chat format. It has no chat template, no pad token, and its EOS
+# means "end of document". We give it a template and an end-of-turn token, and SFT teaches it to use them.
+run_name: p2-smollm3-3b-sft-qlora
+method: sft
+
+model:
+  id: HuggingFaceTB/SmolLM3-3B-Base
+  quantization: 4bit                  # 3B x 0.5 byte = ~1.8 GB of weights instead of ~6 GB
+  chat_template: templates/chatml.jinja
+  eos_token: "<|im_end|>"             # end of an assistant TURN (already in SmolLM3's vocab)
+
+lora:
+  r: 32                               # more capacity: learning a whole new behavior, not one task
+  alpha: 32
+  dropout: 0.05
+  target_modules: all-linear
+
+data:
+  dataset: trl-lib/Capybara           # ~16k high-quality multi-turn conversations ("messages")
+  train_split: train
+  eval_split: test
+  max_train_samples: 2000
+  max_eval_samples: 100
+
+train:
+  num_train_epochs: 1
+  learning_rate: 2.0e-4
+  lr_scheduler_type: cosine
+  warmup_steps: 0.03
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 8      # effective batch = 2 x 8 = 16 conversations
+  per_device_eval_batch_size: 2
+  gradient_checkpointing: true        # recompute activations in backward: ~-60% activation memory
+  max_length: 1024
+  assistant_only_loss: true           # needs {% generation %} tags in the template (ours has them)
+  optim: paged_adamw_8bit             # 8-bit Adam states, paged to CPU on memory spikes
+  eval_strategy: steps
+  eval_steps: 50
+  logging_steps: 10
+
+eval:                                 # same prompts + judge for base, SFT and DPO: comparable numbers
+  metric: reward_model
+  reward_model: Skywork/Skywork-Reward-V2-Qwen3-0.6B
+  dataset: trl-lib/ultrafeedback_binarized
+  split: test
+  formatter: modeltune.formatters:preference_to_prompt
+  max_samples: 100
+  max_new_tokens: 384
+  batch_size: 16
+
+hub:
+  push: true
+  repo_id: 57Ajay/smollm3-3b-sft-qlora

@@ -1,0 +1,58 @@
+# Bonus B: fine-tune a Mixture-of-Experts model on Project 1's exact task, then compare.
+# Model    : IBM Granite-3.1-3B-A800M: 3.3B total params, ~0.8B active per token (40 experts, top-8)
+# Approach : LoRA on attention AND on the expert weights, router frozen, load-balancing loss kept on
+# Chapter  : course/13_mixture_of_experts.md           Runtime: ~20-30 min on a Colab T4 (estimate)
+run_name: bonus-granite-moe-ner-json-lora
+method: sft
+
+model:
+  id: ibm-granite/granite-3.1-3b-a800m-instruct
+  # transformers v5 stores each layer's experts as ONE fused 3-D tensor (not nn.Linear layers),
+  # and bitsandbytes only quantizes nn.Linear. 4-bit would shrink attention only, so keep 16-bit:
+  # 3.3B x 2 bytes = ~6.6 GB, fits a T4.
+  quantization: none
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.0
+  target_modules: [q_proj, k_proj, v_proj, o_proj]   # attention (regular nn.Linear)
+  target_parameters:                                 # experts (raw nn.Parameter tensors)
+    - block_sparse_moe.experts.gate_up_proj
+    - block_sparse_moe.experts.down_proj
+  # Exercise: delete target_parameters (attention-only LoRA) and compare F1 and speed.
+
+data:                                                # identical to Project 1, so results compare 1:1
+  dataset: eriktks/conll2003
+  revision: refs/convert/parquet
+  formatter: modeltune.formatters:conll_to_ner_json
+  train_split: train
+  eval_split: validation
+  max_train_samples: 4000
+  max_eval_samples: 200
+
+train:
+  num_train_epochs: 1
+  learning_rate: 2.0e-4
+  lr_scheduler_type: cosine
+  warmup_steps: 0.05
+  per_device_train_batch_size: 8
+  gradient_accumulation_steps: 2                     # same effective batch (16) as Project 1
+  per_device_eval_batch_size: 8
+  gradient_checkpointing: true
+  max_length: 512
+  router_aux_loss_coef: 0.01   # keep experts load-balanced while fine-tuning (Granite's config says 0.0)
+  eval_strategy: steps
+  eval_steps: 50
+  logging_steps: 10
+
+eval:
+  metric: ner_json
+  split: test
+  max_samples: 300
+  max_new_tokens: 200
+  batch_size: 16
+
+hub:
+  push: true
+  repo_id: 57Ajay/granite-3.1-moe-ner-json-lora
